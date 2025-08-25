@@ -11,13 +11,19 @@ class BoardCornerDetector:
                  canny_low: int = 30,
                  canny_high: int = 90,
                  hough_threshold: int = 35,
+                 max_line_gap: int = 30,
+                 distance_threshold: float = 15,
+                 angle_threshold: float = 10,
                  min_line_length: int = 60,
-                 max_line_gap: int = 30):
+                 max_lines_per_direction: int = 50):
         self.canny_low = canny_low
         self.canny_high = canny_high
         self.hough_threshold = hough_threshold
-        self.min_line_length = min_line_length
         self.max_line_gap = max_line_gap
+        self.distance_threshold = distance_threshold
+        self.angle_threshold = angle_threshold
+        self.min_line_length = min_line_length
+        self.max_lines_per_direction = max_lines_per_direction
         
     def preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """Convert image to grayscale and apply Gaussian blur."""
@@ -52,40 +58,48 @@ class BoardCornerDetector:
         x1, y1, x2, y2 = line
         return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
-    def cluster_parallel_lines(self, lines: List[Tuple[int, int, int, int]], 
-                              distance_threshold: float = 30, 
-                              angle_threshold: float = 12) -> List[Tuple[int, int, int, int]]:
+    def cluster_parallel_lines(self, lines: List[Tuple[int, int, int, int]]) -> List[Tuple[int, int, int, int]]:
         """Cluster parallel lines that are close together and return sequential edge lines."""
         if not lines:
             return []
         
-        # Group lines by similarity
+        # Group lines by similarity using proper transitive clustering
         clusters = []
         used = [False] * len(lines)
         
-        for i, line1 in enumerate(lines):
+        for i, seed_line in enumerate(lines):
             if used[i]:
                 continue
                 
             # Start a new cluster with this line
-            cluster = [line1]
+            cluster = [seed_line]
             used[i] = True
-            angle1 = abs(self.line_angle(line1))
+            seed_angle = abs(self.line_angle(seed_line))
             
-            # Find similar lines to add to this cluster
-            for j, line2 in enumerate(lines):
-                if used[j] or i == j:
-                    continue
-                    
-                angle2 = abs(self.line_angle(line2))
-                angle_diff = min(abs(angle1 - angle2), 180 - abs(angle1 - angle2))
+            # Keep expanding cluster until no more lines can be added
+            cluster_expanded = True
+            while cluster_expanded:
+                cluster_expanded = False
                 
-                if angle_diff < angle_threshold:
-                    # Check distance between lines
-                    dist = self.line_to_line_distance(line1, line2)
-                    if dist < distance_threshold:
-                        cluster.append(line2)
-                        used[j] = True
+                # Check all unused lines against all current cluster members
+                for j, candidate_line in enumerate(lines):
+                    if used[j]:
+                        continue
+                        
+                    candidate_angle = abs(self.line_angle(candidate_line))
+                    angle_diff = min(abs(seed_angle - candidate_angle), 180 - abs(seed_angle - candidate_angle))
+                    
+                    if angle_diff < self.angle_threshold:
+                        # Check if candidate is close to ANY existing cluster member
+                        min_dist_to_cluster = float('inf')
+                        for cluster_line in cluster:
+                            dist = self.line_to_line_distance(cluster_line, candidate_line)
+                            min_dist_to_cluster = min(min_dist_to_cluster, dist)
+                        
+                        if min_dist_to_cluster < self.distance_threshold:
+                            cluster.append(candidate_line)
+                            used[j] = True
+                            cluster_expanded = True
             
             clusters.append(cluster)
         
@@ -127,6 +141,7 @@ class BoardCornerDetector:
         
         if extreme_points:
             (x1, y1), (x2, y2) = extreme_points
+            #print(f"Creating sequential edge: ({x1}, {y1}) to ({x2}, {y2}), from {len(lines)} segments")
             return (int(x1), int(y1), int(x2), int(y2))
         else:
             # Fallback to the longest line in the cluster
@@ -166,14 +181,11 @@ class BoardCornerDetector:
         """Filter lines into horizontal and vertical categories for rectangular board."""
         horizontal_lines = []
         vertical_lines = []
+        too_short_lines_count = 0
         
         for line in lines:
             angle = abs(self.line_angle(line))
             length = self.line_length(line)
-            
-            # Only consider longer lines for board edges
-            if length < 60:
-                continue
                 
             # Classify as horizontal (near 0° or 180°) or vertical (near 90°)
             if angle < 20 or angle > 160:
@@ -187,8 +199,8 @@ class BoardCornerDetector:
         
         # Always apply clustering to improve line quality, especially for broken board edges
         # First try with longer lines
-        horizontal_clustered = self.cluster_parallel_lines(horizontal_lines[:12])
-        vertical_clustered = self.cluster_parallel_lines(vertical_lines[:12])
+        horizontal_clustered = self.cluster_parallel_lines(horizontal_lines[:self.max_lines_per_direction])
+        vertical_clustered = self.cluster_parallel_lines(vertical_lines[:self.max_lines_per_direction])
         
         # Sort clustered results by length
         horizontal_clustered.sort(key=self.line_length, reverse=True)
@@ -442,13 +454,7 @@ def main():
     print(f"Loaded image: {image.shape}")
     
     # Create detector with optimized parameters
-    detector = BoardCornerDetector(
-        canny_low=30,
-        canny_high=90,
-        hough_threshold=35,
-        min_line_length=60,
-        max_line_gap=30
-    )
+    detector = BoardCornerDetector()
     
     # Detect corners
     corners, debug_info = detector.detect_board_corners(image)
