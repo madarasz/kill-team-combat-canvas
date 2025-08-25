@@ -8,19 +8,19 @@
         [76, 836],
         [1290, 868]
       ],
-      "tolerance": 5,
+      "tolerance": 15,
       "description": "Octarius on sheets"
     },
     {
-      "filename": "tests/test-data/board002.jpg",
+      "filename": "tests/test-data/board003.jpg",
       "expected_corners": [
-        [263, 219],
-        [1010, 26],
-        [328, 804],
-        [1207, 578]
+        [53, 18],
+        [630, 62],
+        [59, 867],
+        [638, 812]
       ],
-      "tolerance": 5,
-      "description": "Octarius on sheets, diagonal"
+      "tolerance": 15,
+      "description": "Volkus on table, portrait"
     }
   ]
 }

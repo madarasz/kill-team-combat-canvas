@@ -9,9 +9,9 @@ import argparse
 class BoardCornerDetector:
     def __init__(self, 
                  canny_low: int = 30,
-                 canny_high: int = 100,
-                 hough_threshold: int = 60,
-                 min_line_length: int = 80,
+                 canny_high: int = 90,
+                 hough_threshold: int = 35,
+                 min_line_length: int = 60,
                  max_line_gap: int = 30):
         self.canny_low = canny_low
         self.canny_high = canny_high
@@ -52,6 +52,85 @@ class BoardCornerDetector:
         x1, y1, x2, y2 = line
         return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
+    def cluster_parallel_lines(self, lines: List[Tuple[int, int, int, int]], 
+                              distance_threshold: float = 25, 
+                              angle_threshold: float = 8) -> List[Tuple[int, int, int, int]]:
+        """Cluster parallel lines that are close together and return representative lines."""
+        if not lines:
+            return []
+        
+        # Group lines by similarity
+        clusters = []
+        used = [False] * len(lines)
+        
+        for i, line1 in enumerate(lines):
+            if used[i]:
+                continue
+                
+            # Start a new cluster with this line
+            cluster = [line1]
+            used[i] = True
+            angle1 = abs(self.line_angle(line1))
+            
+            # Find similar lines to add to this cluster
+            for j, line2 in enumerate(lines):
+                if used[j] or i == j:
+                    continue
+                    
+                angle2 = abs(self.line_angle(line2))
+                angle_diff = min(abs(angle1 - angle2), 180 - abs(angle1 - angle2))
+                
+                if angle_diff < angle_threshold:
+                    # Check distance between lines
+                    dist = self.line_to_line_distance(line1, line2)
+                    if dist < distance_threshold:
+                        cluster.append(line2)
+                        used[j] = True
+            
+            clusters.append(cluster)
+        
+        # Create representative lines for each cluster
+        representative_lines = []
+        for cluster in clusters:
+            if len(cluster) == 1:
+                representative_lines.append(cluster[0])
+            else:
+                # Create a representative line by averaging cluster endpoints
+                # This gives better results than just picking the longest line
+                total_length = sum(self.line_length(line) for line in cluster)
+                
+                # Weight by line length for better averaging
+                weighted_x1 = weighted_y1 = weighted_x2 = weighted_y2 = 0
+                for line in cluster:
+                    weight = self.line_length(line) / total_length
+                    x1, y1, x2, y2 = line
+                    weighted_x1 += x1 * weight
+                    weighted_y1 += y1 * weight
+                    weighted_x2 += x2 * weight
+                    weighted_y2 += y2 * weight
+                
+                avg_line = (int(weighted_x1), int(weighted_y1), int(weighted_x2), int(weighted_y2))
+                representative_lines.append(avg_line)
+        
+        return representative_lines
+
+    def line_to_line_distance(self, line1: Tuple[int, int, int, int], 
+                             line2: Tuple[int, int, int, int]) -> float:
+        """Calculate minimum distance between two line segments."""
+        x1, y1, x2, y2 = line1
+        x3, y3, x4, y4 = line2
+        
+        # Calculate distance from midpoint of line1 to line2
+        mid1_x, mid1_y = (x1 + x2) / 2, (y1 + y2) / 2
+        
+        # Distance from point to line formula
+        A = y4 - y3
+        B = x3 - x4  
+        C = x4 * y3 - x3 * y4
+        
+        distance = abs(A * mid1_x + B * mid1_y + C) / math.sqrt(A*A + B*B + 1e-10)
+        return distance
+
     def filter_board_lines(self, lines: List[Tuple[int, int, int, int]]) -> Tuple[List, List]:
         """Filter lines into horizontal and vertical categories for rectangular board."""
         horizontal_lines = []
@@ -71,11 +150,45 @@ class BoardCornerDetector:
             elif 70 < angle < 110:
                 vertical_lines.append(line)
         
-        # Sort by length and keep the longest ones
+        # Sort by length first
         horizontal_lines.sort(key=self.line_length, reverse=True)
         vertical_lines.sort(key=self.line_length, reverse=True)
         
-        return horizontal_lines[:6], vertical_lines[:6]
+        # Apply clustering only if we have insufficient long lines
+        # This prevents clustering from affecting images that already work well
+        horizontal_result = horizontal_lines[:6]
+        vertical_result = vertical_lines[:6]
+        
+        # If we don't have enough good lines, try with shorter lines and clustering
+        if len(horizontal_result) < 2 or len(vertical_result) < 2:
+            # Try again with shorter lines
+            horizontal_short = []
+            vertical_short = []
+            
+            for line in lines:
+                angle = abs(self.line_angle(line))
+                length = self.line_length(line)
+                
+                if length < 40:  # Reduced threshold for clustering attempt
+                    continue
+                    
+                if angle < 20 or angle > 160:
+                    horizontal_short.append(line)
+                elif 70 < angle < 110:
+                    vertical_short.append(line)
+            
+            # Apply clustering to the shorter lines
+            if len(horizontal_result) < 2:
+                horizontal_clusters = self.cluster_parallel_lines(horizontal_short)
+                horizontal_clusters.sort(key=self.line_length, reverse=True)
+                horizontal_result = horizontal_clusters[:6]
+            
+            if len(vertical_result) < 2:
+                vertical_clusters = self.cluster_parallel_lines(vertical_short)
+                vertical_clusters.sort(key=self.line_length, reverse=True)
+                vertical_result = vertical_clusters[:6]
+        
+        return horizontal_result, vertical_result
     
     def line_intersection(self, line1: Tuple[int, int, int, int], 
                          line2: Tuple[int, int, int, int]) -> Optional[Tuple[float, float]]:
@@ -245,12 +358,12 @@ def main():
     
     print(f"Loaded image: {image.shape}")
     
-    # Create detector
+    # Create detector with optimized parameters
     detector = BoardCornerDetector(
         canny_low=30,
-        canny_high=100,
-        hough_threshold=60,
-        min_line_length=80,
+        canny_high=90,
+        hough_threshold=35,
+        min_line_length=60,
         max_line_gap=30
     )
     

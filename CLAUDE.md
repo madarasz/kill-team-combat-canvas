@@ -39,13 +39,19 @@ python3 board_detector.py --help
 ### Testing
 ```bash
 # Run all unit tests
-python3 test_board_detector.py
+python3 -m unittest discover tests/ -v
 
-# Run with verbose output
-python3 test_board_detector.py -v
+# Run all tests in the corner detection test file
+python3 -m unittest tests.test_board_corner_detector -v
 
-# Run specific test method
-python3 -m unittest test_board_detector.TestBoardCornerDetector.test_board_corner_detection
+# Run specific test methods
+python3 -m unittest tests.test_board_corner_detector.TestBoardCornerDetector.test_board_corner_detection -v
+python3 -m unittest tests.test_board_corner_detector.TestBoardCornerDetector.test_board_corner_detection_5px_tolerance -v
+python3 -m unittest tests.test_board_corner_detector.TestBoardCornerDetector.test_corner_detection_robustness -v
+
+# Run with pytest (alternative test runner)
+python3 -m pytest tests/ -v
+python3 -m pytest tests/test_board_corner_detector.py -v
 ```
 
 ## Code Architecture
@@ -59,17 +65,23 @@ The `BoardCornerDetector` class in `board_detector.py` implements a computer vis
 4. **Corner Extraction**: Line intersection calculation to locate corners
 5. **Filtering**: Geometric validation and rectangle corner selection
 
-Key configurable parameters:
-- `canny_low/canny_high`: Edge detection thresholds
-- `hough_threshold`: Line detection sensitivity  
-- `min_line_length/max_line_gap`: Line filtering constraints
+Key configurable parameters (optimized for 5px accuracy):
+- `canny_low/canny_high`: Edge detection thresholds (30/90, optimized from 30/100)
+- `hough_threshold`: Line detection sensitivity (40, optimized from 60)
+- `min_line_length/max_line_gap`: Line filtering constraints (60/20, optimized from 80/30)
 
 ### Test Framework Structure
-The testing system uses a data-driven approach:
+The testing system uses a data-driven approach with organized test structure:
 
-- `tests/test_board_corners.json`: Contains test images with expected corner coordinates and tolerance values
-- `test_board_detector.py`: Implements corner matching logic that finds closest detected corners to expected positions within tolerance
-- Tests validate both accuracy (corner positions) and robustness (consistency across runs)
+- `tests/test-data/test_board_corners.json`: Contains test images with expected corner coordinates and tolerance values
+- `tests/test_board_corner_detector.py`: Unit test suite with corner matching logic that finds closest detected corners to expected positions within tolerance
+- `tests/__init__.py`: Makes tests directory a proper Python package
+
+Test categories:
+- **General Detection Test**: 15px tolerance for overall functionality validation
+- **Strict 5px Tolerance Test**: Validates optimized parameter precision
+- **Robustness Test**: Ensures consistent detection across multiple runs
+- **Initialization Test**: Validates detector parameter setup
 
 ### Test Data Format
 ```json

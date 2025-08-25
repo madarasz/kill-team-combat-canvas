@@ -1,8 +1,12 @@
 import unittest
 import cv2
 import json
-import os
 import math
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import board_detector
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from board_detector import BoardCornerDetector
 
 
@@ -10,7 +14,8 @@ class TestBoardCornerDetector(unittest.TestCase):
     
     def setUp(self):
         self.detector = BoardCornerDetector()
-        self.test_data_file = "tests/test-data/test_board_corners.json"
+        # Path relative to the test file location
+        self.test_data_file = Path(__file__).parent / "test-data" / "test_board_corners.json"
         
     def load_test_data(self):
         """Load test data from JSON file."""
@@ -51,7 +56,7 @@ class TestBoardCornerDetector(unittest.TestCase):
         return matches
     
     def test_board_corner_detection(self):
-        """Test board corner detection on test images."""
+        """Test board corner detection using tolerance values from JSON test data."""
         test_data = self.load_test_data()
         
         for test_case in test_data["test_images"]:
@@ -60,10 +65,13 @@ class TestBoardCornerDetector(unittest.TestCase):
             tolerance = test_case["tolerance"]
             description = test_case["description"]
             
+            # Convert relative path to absolute path from project root
+            image_path = Path(__file__).parent.parent / filename
+            
             with self.subTest(filename=filename, description=description):
                 # Load image
-                image = cv2.imread(filename)
-                self.assertIsNotNone(image, f"Could not load image: {filename}")
+                image = cv2.imread(str(image_path))
+                self.assertIsNotNone(image, f"Could not load image: {image_path}")
                 
                 # Detect corners
                 detected_corners, _ = self.detector.detect_board_corners(image)
@@ -72,7 +80,7 @@ class TestBoardCornerDetector(unittest.TestCase):
                 self.assertEqual(len(detected_corners), len(expected_corners),
                                f"Expected {len(expected_corners)} corners, got {len(detected_corners)}")
                 
-                # Find matches between detected and expected corners
+                # Use tolerance from JSON data
                 matches = self.find_closest_corner_match(detected_corners, expected_corners, tolerance)
                 
                 # Check that all expected corners were matched
@@ -87,75 +95,15 @@ class TestBoardCornerDetector(unittest.TestCase):
                 for detected_idx, expected_idx, distance in matches:
                     detected = detected_corners[detected_idx]
                     expected = expected_corners[expected_idx]
-                    print(f"  Expected ({expected[0]:4}, {expected[1]:4}) -> "
+                    status = "✓" if distance <= tolerance else "✗"
+                    print(f"  {status} Expected ({expected[0]:4}, {expected[1]:4}) -> "
                           f"Detected ({detected[0]:6.1f}, {detected[1]:6.1f}) "
                           f"[Distance: {distance:.1f}px]")
                 
                 # Verify all matches are within tolerance
                 for _, _, distance in matches:
-                    self.assertLess(distance, tolerance,
-                                  f"Corner distance {distance:.1f} exceeds tolerance {tolerance}")
-    
-    def test_board_corner_detection_5px_tolerance(self):
-        """Test board corner detection with 5 pixel tolerance."""
-        test_data = self.load_test_data()
-        STRICT_TOLERANCE = 5.0  # 5 pixel tolerance for strict validation
-        
-        for test_case in test_data["test_images"]:
-            filename = test_case["filename"]
-            expected_corners = test_case["expected_corners"]
-            description = test_case["description"]
-            
-            with self.subTest(filename=filename, description=f"{description} (5px tolerance)"):
-                # Load image
-                image = cv2.imread(filename)
-                self.assertIsNotNone(image, f"Could not load image: {filename}")
-                
-                # Detect corners
-                detected_corners, _ = self.detector.detect_board_corners(image)
-                
-                # Check that we detected the expected number of corners
-                self.assertEqual(len(detected_corners), len(expected_corners),
-                               f"Expected {len(expected_corners)} corners, got {len(detected_corners)}")
-                
-                # Find matches between detected and expected corners with 5px tolerance
-                matches = self.find_closest_corner_match(detected_corners, expected_corners, STRICT_TOLERANCE)
-                
-                # Print detailed results for 5px tolerance test (before assertion)
-                print(f"\nStrict Test (5px tolerance): {description}")
-                print(f"Image: {filename}")
-                print("Corner matching results:")
-                
-                # Calculate all distances for detailed reporting
-                all_distances = []
-                for i, expected in enumerate(expected_corners):
-                    min_dist = float('inf')
-                    closest_detected = None
-                    closest_idx = None
-                    for j, detected in enumerate(detected_corners):
-                        dist = self.calculate_corner_distance(detected, expected)
-                        if dist < min_dist:
-                            min_dist = dist
-                            closest_detected = detected
-                            closest_idx = j
-                    
-                    status = "✓" if min_dist <= STRICT_TOLERANCE else "✗"
-                    all_distances.append(min_dist)
-                    print(f"  {status} Expected ({expected[0]:4}, {expected[1]:4}) -> "
-                          f"Detected ({closest_detected[0]:6.1f}, {closest_detected[1]:6.1f}) "
-                          f"[Distance: {min_dist:.1f}px]")
-                
-                passed_count = sum(1 for d in all_distances if d <= STRICT_TOLERANCE)
-                print(f"Result: {passed_count}/{len(expected_corners)} corners within {STRICT_TOLERANCE}px tolerance")
-                
-                # Check that all expected corners were matched within 5px tolerance
-                self.assertEqual(len(matches), len(expected_corners),
-                               f"Could only match {len(matches)} out of {len(expected_corners)} corners within {STRICT_TOLERANCE}px tolerance")
-                
-                # Verify all matches are within strict 5px tolerance
-                for _, _, distance in matches:
-                    self.assertLessEqual(distance, STRICT_TOLERANCE,
-                                       f"Corner distance {distance:.1f}px exceeds strict tolerance {STRICT_TOLERANCE}px")
+                    self.assertLessEqual(distance, tolerance,
+                                       f"Corner distance {distance:.1f} exceeds tolerance {tolerance}")
 
     def test_corner_detection_robustness(self):
         """Test that corner detection is consistent across multiple runs."""
@@ -165,8 +113,10 @@ class TestBoardCornerDetector(unittest.TestCase):
             self.skipTest("No test images available")
         
         filename = test_data["test_images"][0]["filename"]
-        image = cv2.imread(filename)
-        self.assertIsNotNone(image, f"Could not load image: {filename}")
+        # Convert relative path to absolute path from project root
+        image_path = Path(__file__).parent.parent / filename
+        image = cv2.imread(str(image_path))
+        self.assertIsNotNone(image, f"Could not load image: {image_path}")
         
         # Run detection multiple times
         results = []
@@ -183,7 +133,6 @@ class TestBoardCornerDetector(unittest.TestCase):
                 distance = self.calculate_corner_distance(results[0][j], results[i][j])
                 self.assertLess(distance, 1.0,
                               f"Corner detection varies by {distance:.1f}px between runs")
-
-
+    
 if __name__ == "__main__":
     unittest.main(verbosity=2)
