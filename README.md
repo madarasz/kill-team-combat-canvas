@@ -35,6 +35,21 @@ pip install -r requirements.txt
    ```
 4. **View results** in the generated `board_detection_result.png`
 
+### Accuracy Report
+
+Generate detailed accuracy reports for all test images:
+
+```bash
+# Generate comprehensive accuracy report
+python3 board_detector.py --report
+```
+
+This will analyze all test images and display:
+- Distance between expected and detected corners
+- Pass/fail status for each corner
+- Per-image and overall statistics
+- Success rates and accuracy metrics
+
 ### Example Output
 
 The detection system will identify all four corners of your board and show:
@@ -78,12 +93,16 @@ The current test suite achieves:
 ```
 kt-buddy/
 ├── board_detector.py           # Main detection algorithm
-├── test_board_detector.py      # Unit tests
+├── report.py                   # Accuracy reporting functionality
 ├── requirements.txt            # Python dependencies
 ├── tests/
-│   ├── test_board_corners.json # Test data configuration
-│   └── test-data/              # Test images
-│       └── board001.jpg
-└── CLAUDE.md                   # Developer documentation
+│   ├── test_board_corner_detector.py  # Unit tests
+│   ├── test-data/              # Test images
+│   │   ├── board001.jpg
+│   │   ├── board003.jpg
+│   │   └── test_board_corners.json # Test data configuration
+│   └── __init__.py
+├── CLAUDE.md                   # Developer documentation
+└── README.md                   # Project documentation
 ```
 

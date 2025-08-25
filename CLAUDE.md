@@ -27,13 +27,22 @@ python3 board_detector.py path/to/your/image.jpg
 # Run with custom output file
 python3 board_detector.py path/to/image.jpg --output custom_result.png
 
+# Generate accuracy report for all test images
+python3 board_detector.py --report
+
 # Show help and available options
 python3 board_detector.py --help
 
-# This will:
+# Single image mode will:
 # - Load the specified image (or tests/test-data/board001.jpg by default)
 # - Detect the 4 board corners
 # - Save visualization to specified output file (or board_detection_result.png by default)
+
+# Report mode will:
+# - Load all test images from tests/test-data/test_board_corners.json
+# - Run corner detection on each image
+# - Calculate distances between expected and detected corners
+# - Display detailed accuracy report in terminal with statistics
 ```
 
 ### Testing
@@ -69,6 +78,19 @@ Key configurable parameters (optimized for 5px accuracy):
 - `canny_low/canny_high`: Edge detection thresholds (30/90, optimized from 30/100)
 - `hough_threshold`: Line detection sensitivity (40, optimized from 60)
 - `min_line_length/max_line_gap`: Line filtering constraints (60/20, optimized from 80/30)
+
+### Report System
+The `report.py` module provides accuracy analysis functionality:
+
+1. **Distance Calculation**: Euclidean distance between expected and detected corners
+2. **Corner Matching**: Finds closest detected corners to expected positions within tolerance
+3. **Statistical Analysis**: Per-image and overall statistics including success rates
+4. **Formatted Output**: Clean terminal formatting with pass/fail indicators
+
+Key functions:
+- `calculate_corner_distance()`: Computes distance between corner pairs
+- `find_closest_corner_match()`: Matches detected corners to expected positions
+- `generate_report()`: Main report generation function with comprehensive analysis
 
 ### Test Framework Structure
 The testing system uses a data-driven approach with organized test structure:

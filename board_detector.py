@@ -53,9 +53,9 @@ class BoardCornerDetector:
         return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
     def cluster_parallel_lines(self, lines: List[Tuple[int, int, int, int]], 
-                              distance_threshold: float = 25, 
-                              angle_threshold: float = 8) -> List[Tuple[int, int, int, int]]:
-        """Cluster parallel lines that are close together and return representative lines."""
+                              distance_threshold: float = 30, 
+                              angle_threshold: float = 12) -> List[Tuple[int, int, int, int]]:
+        """Cluster parallel lines that are close together and return sequential edge lines."""
         if not lines:
             return []
         
@@ -89,30 +89,48 @@ class BoardCornerDetector:
             
             clusters.append(cluster)
         
-        # Create representative lines for each cluster
+        # Create sequential edge lines for each cluster
         representative_lines = []
         for cluster in clusters:
             if len(cluster) == 1:
                 representative_lines.append(cluster[0])
             else:
-                # Create a representative line by averaging cluster endpoints
-                # This gives better results than just picking the longest line
-                total_length = sum(self.line_length(line) for line in cluster)
-                
-                # Weight by line length for better averaging
-                weighted_x1 = weighted_y1 = weighted_x2 = weighted_y2 = 0
-                for line in cluster:
-                    weight = self.line_length(line) / total_length
-                    x1, y1, x2, y2 = line
-                    weighted_x1 += x1 * weight
-                    weighted_y1 += y1 * weight
-                    weighted_x2 += x2 * weight
-                    weighted_y2 += y2 * weight
-                
-                avg_line = (int(weighted_x1), int(weighted_y1), int(weighted_x2), int(weighted_y2))
-                representative_lines.append(avg_line)
+                # Create a sequential edge from the cluster by connecting endpoints
+                sequential_line = self.create_sequential_edge(cluster)
+                representative_lines.append(sequential_line)
         
         return representative_lines
+    
+    def create_sequential_edge(self, lines: List[Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
+        """Create a sequential edge line from a cluster of line segments."""
+        if len(lines) == 1:
+            return lines[0]
+        
+        # Collect all endpoints
+        endpoints = []
+        for line in lines:
+            x1, y1, x2, y2 = line
+            endpoints.append((x1, y1))
+            endpoints.append((x2, y2))
+        
+        # Find the two endpoints that are farthest apart (extreme points of the sequence)
+        max_distance = 0
+        extreme_points = None
+        
+        for i in range(len(endpoints)):
+            for j in range(i + 1, len(endpoints)):
+                dist = math.sqrt((endpoints[i][0] - endpoints[j][0])**2 + 
+                               (endpoints[i][1] - endpoints[j][1])**2)
+                if dist > max_distance:
+                    max_distance = dist
+                    extreme_points = (endpoints[i], endpoints[j])
+        
+        if extreme_points:
+            (x1, y1), (x2, y2) = extreme_points
+            return (int(x1), int(y1), int(x2), int(y2))
+        else:
+            # Fallback to the longest line in the cluster
+            return max(lines, key=self.line_length)
 
     def line_to_line_distance(self, line1: Tuple[int, int, int, int], 
                              line2: Tuple[int, int, int, int]) -> float:
@@ -120,7 +138,7 @@ class BoardCornerDetector:
         x1, y1, x2, y2 = line1
         x3, y3, x4, y4 = line2
         
-        # Calculate distance from midpoint of line1 to line2
+        # For better clustering of broken lines, check both midpoint distance and endpoint distances
         mid1_x, mid1_y = (x1 + x2) / 2, (y1 + y2) / 2
         
         # Distance from point to line formula
@@ -128,8 +146,21 @@ class BoardCornerDetector:
         B = x3 - x4  
         C = x4 * y3 - x3 * y4
         
-        distance = abs(A * mid1_x + B * mid1_y + C) / math.sqrt(A*A + B*B + 1e-10)
-        return distance
+        # Distance from midpoint of line1 to line2
+        midpoint_distance = abs(A * mid1_x + B * mid1_y + C) / math.sqrt(A*A + B*B + 1e-10)
+        
+        # Also check if lines could be continuations of each other (endpoints close)
+        # Calculate distances between all endpoint combinations
+        endpoint_distances = [
+            math.sqrt((x1 - x3)**2 + (y1 - y3)**2),
+            math.sqrt((x1 - x4)**2 + (y1 - y4)**2),
+            math.sqrt((x2 - x3)**2 + (y2 - y3)**2),
+            math.sqrt((x2 - x4)**2 + (y2 - y4)**2)
+        ]
+        min_endpoint_distance = min(endpoint_distances)
+        
+        # Use the minimum of midpoint distance and endpoint distance for better clustering
+        return min(midpoint_distance, min_endpoint_distance * 0.8)
 
     def filter_board_lines(self, lines: List[Tuple[int, int, int, int]]) -> Tuple[List, List]:
         """Filter lines into horizontal and vertical categories for rectangular board."""
@@ -154,12 +185,19 @@ class BoardCornerDetector:
         horizontal_lines.sort(key=self.line_length, reverse=True)
         vertical_lines.sort(key=self.line_length, reverse=True)
         
-        # Apply clustering only if we have insufficient long lines
-        # This prevents clustering from affecting images that already work well
-        horizontal_result = horizontal_lines[:6]
-        vertical_result = vertical_lines[:6]
+        # Always apply clustering to improve line quality, especially for broken board edges
+        # First try with longer lines
+        horizontal_clustered = self.cluster_parallel_lines(horizontal_lines[:12])
+        vertical_clustered = self.cluster_parallel_lines(vertical_lines[:12])
         
-        # If we don't have enough good lines, try with shorter lines and clustering
+        # Sort clustered results by length
+        horizontal_clustered.sort(key=self.line_length, reverse=True)
+        vertical_clustered.sort(key=self.line_length, reverse=True)
+        
+        horizontal_result = horizontal_clustered[:6]
+        vertical_result = vertical_clustered[:6]
+        
+        # If we still don't have enough good lines, try with shorter lines and clustering
         if len(horizontal_result) < 2 or len(vertical_result) < 2:
             # Try again with shorter lines
             horizontal_short = []
@@ -207,10 +245,12 @@ class BoardCornerDetector:
     
     def find_corners(self, horizontal_lines: List, vertical_lines: List, 
                     image_shape: Tuple[int, int]) -> List[Tuple[float, float]]:
-        """Find board corners by intersecting horizontal and vertical lines."""
+        """Find board corners by intersecting horizontal and vertical lines using edge endpoints."""
         corners = []
         height, width = image_shape[:2]
         
+        # For each horizontal line, find intersections with vertical lines
+        # But use the closest endpoint of each line to the intersection point
         for h_line in horizontal_lines:
             for v_line in vertical_lines:
                 intersection = self.line_intersection(h_line, v_line)
@@ -218,7 +258,9 @@ class BoardCornerDetector:
                     x, y = intersection
                     # Check if intersection is within image bounds with some margin
                     if -50 <= x <= width + 50 and -50 <= y <= height + 50:
-                        corners.append((x, y))
+                        # Find the best corner point using line endpoints closest to intersection
+                        corner = self.get_best_corner_from_intersection(h_line, v_line, intersection)
+                        corners.append(corner)
         
         # Remove duplicate corners (within 30 pixels of each other)
         filtered_corners = []
@@ -237,6 +279,38 @@ class BoardCornerDetector:
             filtered_corners = self.select_best_rectangle_corners(filtered_corners, image_shape)
         
         return filtered_corners
+    
+    def get_best_corner_from_intersection(self, h_line: Tuple[int, int, int, int], 
+                                        v_line: Tuple[int, int, int, int], 
+                                        intersection: Tuple[float, float]) -> Tuple[float, float]:
+        """Get the best corner point using the endpoints of lines closest to the intersection."""
+        ix, iy = intersection
+        
+        # Get endpoints of both lines
+        hx1, hy1, hx2, hy2 = h_line
+        vx1, vy1, vx2, vy2 = v_line
+        
+        # Find which endpoint of each line is closest to the intersection
+        h_endpoints = [(hx1, hy1), (hx2, hy2)]
+        v_endpoints = [(vx1, vy1), (vx2, vy2)]
+        
+        best_h_endpoint = min(h_endpoints, key=lambda p: math.sqrt((p[0] - ix)**2 + (p[1] - iy)**2))
+        best_v_endpoint = min(v_endpoints, key=lambda p: math.sqrt((p[0] - ix)**2 + (p[1] - iy)**2))
+        
+        # Check if the closest endpoints are actually close to the intersection
+        # If they are far away, use the intersection point instead
+        h_dist = math.sqrt((best_h_endpoint[0] - ix)**2 + (best_h_endpoint[1] - iy)**2)
+        v_dist = math.sqrt((best_v_endpoint[0] - ix)**2 + (best_v_endpoint[1] - iy)**2)
+        
+        # If endpoints are close to intersection (within 20 pixels), use endpoint averaging
+        # Otherwise, stick with the mathematical intersection
+        if h_dist < 20 and v_dist < 20:
+            corner_x = (best_h_endpoint[0] + best_v_endpoint[0]) / 2
+            corner_y = (best_h_endpoint[1] + best_v_endpoint[1]) / 2
+            return (corner_x, corner_y)
+        else:
+            # Use the intersection point as it's more accurate when endpoints are far
+            return intersection
     
     def select_best_rectangle_corners(self, corners: List[Tuple[float, float]], 
                                     image_shape: Tuple[int, int]) -> List[Tuple[float, float]]:
@@ -346,9 +420,18 @@ def main():
                         help='Path to the board image file (default: tests/test-data/board001.jpg)')
     parser.add_argument('--output', '-o', default="board_detection_result.png",
                         help='Output path for visualization image (default: board_detection_result.png)')
+    parser.add_argument('--report', action='store_true',
+                        help='Generate accuracy report for all test images instead of processing single image')
     
     args = parser.parse_args()
     
+    # If report mode is requested, generate report and exit
+    if args.report:
+        from report import generate_report
+        generate_report()
+        return
+    
+    # Normal single image processing mode
     # Load the image
     image = cv2.imread(args.image_path)
     
