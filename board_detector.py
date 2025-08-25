@@ -12,9 +12,9 @@ class BoardCornerDetector:
                  canny_high: int = 90,
                  hough_threshold: int = 35,
                  max_line_gap: int = 30,
-                 distance_threshold: float = 15,
+                 distance_threshold: float = 5,
                  angle_threshold: float = 10,
-                 min_line_length: int = 60,
+                 min_line_length: int = 30,
                  max_lines_per_direction: int = 50):
         self.canny_low = canny_low
         self.canny_high = canny_high
@@ -209,35 +209,6 @@ class BoardCornerDetector:
         horizontal_result = horizontal_clustered[:6]
         vertical_result = vertical_clustered[:6]
         
-        # If we still don't have enough good lines, try with shorter lines and clustering
-        if len(horizontal_result) < 2 or len(vertical_result) < 2:
-            # Try again with shorter lines
-            horizontal_short = []
-            vertical_short = []
-            
-            for line in lines:
-                angle = abs(self.line_angle(line))
-                length = self.line_length(line)
-                
-                if length < 40:  # Reduced threshold for clustering attempt
-                    continue
-                    
-                if angle < 20 or angle > 160:
-                    horizontal_short.append(line)
-                elif 70 < angle < 110:
-                    vertical_short.append(line)
-            
-            # Apply clustering to the shorter lines
-            if len(horizontal_result) < 2:
-                horizontal_clusters = self.cluster_parallel_lines(horizontal_short)
-                horizontal_clusters.sort(key=self.line_length, reverse=True)
-                horizontal_result = horizontal_clusters[:6]
-            
-            if len(vertical_result) < 2:
-                vertical_clusters = self.cluster_parallel_lines(vertical_short)
-                vertical_clusters.sort(key=self.line_length, reverse=True)
-                vertical_result = vertical_clusters[:6]
-        
         return horizontal_result, vertical_result
     
     def line_intersection(self, line1: Tuple[int, int, int, int], 
@@ -270,59 +241,13 @@ class BoardCornerDetector:
                     x, y = intersection
                     # Check if intersection is within image bounds with some margin
                     if -50 <= x <= width + 50 and -50 <= y <= height + 50:
-                        # Find the best corner point using line endpoints closest to intersection
-                        corner = self.get_best_corner_from_intersection(h_line, v_line, intersection)
-                        corners.append(corner)
-        
-        # Remove duplicate corners (within 30 pixels of each other)
-        filtered_corners = []
-        for corner in corners:
-            is_duplicate = False
-            for existing in filtered_corners:
-                distance = math.sqrt((corner[0] - existing[0])**2 + (corner[1] - existing[1])**2)
-                if distance < 30:
-                    is_duplicate = True
-                    break
-            if not is_duplicate:
-                filtered_corners.append(corner)
+                        corners.append(intersection)
         
         # If we have more than 4 corners, select the 4 that form the best rectangle
-        if len(filtered_corners) > 4:
-            filtered_corners = self.select_best_rectangle_corners(filtered_corners, image_shape)
-        
-        return filtered_corners
-    
-    def get_best_corner_from_intersection(self, h_line: Tuple[int, int, int, int], 
-                                        v_line: Tuple[int, int, int, int], 
-                                        intersection: Tuple[float, float]) -> Tuple[float, float]:
-        """Get the best corner point using the endpoints of lines closest to the intersection."""
-        ix, iy = intersection
-        
-        # Get endpoints of both lines
-        hx1, hy1, hx2, hy2 = h_line
-        vx1, vy1, vx2, vy2 = v_line
-        
-        # Find which endpoint of each line is closest to the intersection
-        h_endpoints = [(hx1, hy1), (hx2, hy2)]
-        v_endpoints = [(vx1, vy1), (vx2, vy2)]
-        
-        best_h_endpoint = min(h_endpoints, key=lambda p: math.sqrt((p[0] - ix)**2 + (p[1] - iy)**2))
-        best_v_endpoint = min(v_endpoints, key=lambda p: math.sqrt((p[0] - ix)**2 + (p[1] - iy)**2))
-        
-        # Check if the closest endpoints are actually close to the intersection
-        # If they are far away, use the intersection point instead
-        h_dist = math.sqrt((best_h_endpoint[0] - ix)**2 + (best_h_endpoint[1] - iy)**2)
-        v_dist = math.sqrt((best_v_endpoint[0] - ix)**2 + (best_v_endpoint[1] - iy)**2)
-        
-        # If endpoints are close to intersection (within 20 pixels), use endpoint averaging
-        # Otherwise, stick with the mathematical intersection
-        if h_dist < 20 and v_dist < 20:
-            corner_x = (best_h_endpoint[0] + best_v_endpoint[0]) / 2
-            corner_y = (best_h_endpoint[1] + best_v_endpoint[1]) / 2
-            return (corner_x, corner_y)
-        else:
-            # Use the intersection point as it's more accurate when endpoints are far
-            return intersection
+        if len(corners) > 4:
+            corners = self.select_best_rectangle_corners(corners, image_shape)
+
+        return corners
     
     def select_best_rectangle_corners(self, corners: List[Tuple[float, float]], 
                                     image_shape: Tuple[int, int]) -> List[Tuple[float, float]]:

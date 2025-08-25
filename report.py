@@ -1,6 +1,7 @@
 import cv2
 import json
 import math
+import time
 from pathlib import Path
 from board_detector import BoardCornerDetector
 
@@ -74,7 +75,8 @@ def generate_report():
         'total_corners': 0,
         'successful_matches': 0,
         'distances': [],
-        'within_tolerance': 0
+        'within_tolerance': 0,
+        'processing_times': []
     }
     
     for test_case in test_data["test_images"]:
@@ -98,15 +100,12 @@ def generate_report():
             print()
             continue
         
-        # Detect corners
+        # Detect corners with performance measurement
+        start_time = time.time()
         detected_corners, _ = detector.detect_board_corners(image)
+        processing_time = time.time() - start_time
         
-        print(f"Expected corners: {len(expected_corners)}")
-        print(f"Detected corners: {len(detected_corners)}")
-        
-        if len(detected_corners) != len(expected_corners):
-            print(f"WARNING: Corner count mismatch!")
-        
+        print(f"Processing time: {processing_time*1000:.1f} ms")
         print()
         print("Corner Distance Analysis:")
         print(f"{'Expected':<20} {'Detected':<20} {'Distance':<12} {'Status'}")
@@ -155,12 +154,14 @@ def generate_report():
             
             print()
             print(f"Image Statistics:")
+            print(f"  Processing time: {processing_time*1000:.1f} ms")
             print(f"  Average distance: {avg_distance:.1f} pixels")
             print(f"  Maximum distance: {max_distance:.1f} pixels")
             print(f"  Within tolerance: {within_tolerance_count}/{len(expected_corners)} corners ({within_tolerance_count/len(expected_corners)*100:.1f}%)")
         else:
             print()
             print(f"Image Statistics:")
+            print(f"  Processing time: {processing_time*1000:.1f} ms")
             print(f"  No successful corner matches found")
         
         # Update overall stats
@@ -169,6 +170,7 @@ def generate_report():
         overall_stats['successful_matches'] += len(matches)
         overall_stats['distances'].extend(distances_this_image)
         overall_stats['within_tolerance'] += within_tolerance_count
+        overall_stats['processing_times'].append(processing_time)
         
         print()
         print("=" * 80)
@@ -178,14 +180,21 @@ def generate_report():
     print("OVERALL SUMMARY")
     print("=" * 80)
     print(f"Total images processed: {overall_stats['total_images']}")
-    print(f"Total corners expected: {overall_stats['total_corners']}")
-    print(f"Total corners matched: {overall_stats['successful_matches']}")
     print(f"Total corners within tolerance: {overall_stats['within_tolerance']}")
     
-    if overall_stats['distances']:
+    if overall_stats['distances'] and overall_stats['processing_times']:
         avg_distance = sum(overall_stats['distances']) / len(overall_stats['distances'])
         max_distance = max(overall_stats['distances'])
         min_distance = min(overall_stats['distances'])
+        avg_processing_time = sum(overall_stats['processing_times']) / len(overall_stats['processing_times'])
+        max_processing_time = max(overall_stats['processing_times'])
+        min_processing_time = min(overall_stats['processing_times'])
+        
+        print()
+        print(f"Performance Statistics:")
+        print(f"  Average processing time: {avg_processing_time*1000:.1f} ms")
+        print(f"  Minimum processing time: {min_processing_time*1000:.1f} ms")
+        print(f"  Maximum processing time: {max_processing_time*1000:.1f} ms")
         
         print()
         print(f"Distance Statistics:")

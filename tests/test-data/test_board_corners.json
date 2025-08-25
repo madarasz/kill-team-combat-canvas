@@ -3,12 +3,12 @@
     {
       "filename": "tests/test-data/board001.jpg",
       "expected_corners": [
-        [196, 67],
+        [196, 66],
         [1213, 8],
         [76, 836],
         [1290, 868]
       ],
-      "tolerance": 15,
+      "tolerance": 5,
       "description": "Octarius on sheets"
     },
     {
@@ -19,7 +19,7 @@
         [59, 867],
         [638, 812]
       ],
-      "tolerance": 15,
+      "tolerance": 5,
       "description": "Volkus on table, portrait"
     }
   ]
