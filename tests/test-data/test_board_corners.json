@@ -1,0 +1,26 @@
+{
+  "test_images": [
+    {
+      "filename": "tests/test-data/board001.jpg",
+      "expected_corners": [
+        [196, 67],
+        [1213, 8],
+        [76, 836],
+        [1290, 868]
+      ],
+      "tolerance": 5,
+      "description": "Octarius on sheets"
+    },
+    {
+      "filename": "tests/test-data/board002.jpg",
+      "expected_corners": [
+        [263, 219],
+        [1010, 26],
+        [328, 804],
+        [1207, 578]
+      ],
+      "tolerance": 5,
+      "description": "Octarius on sheets, diagonal"
+    }
+  ]
+}
